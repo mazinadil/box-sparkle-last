@@ -107,13 +107,18 @@ const fetchBlogPosts = async () => {
     }
     
     // Persist a static cache for the frontend (avoids client-side WP API calls / CORS issues)
-    try {
-      const cachePath = toAbsolute('dist/wp-posts.json')
-      fs.writeFileSync(cachePath, JSON.stringify(posts, null, 2), 'utf-8')
-      console.log(`✓ Wrote WP post cache to dist/wp-posts.json (${posts.length} posts)`)
-    } catch (err) {
-      console.warn('⚠️  Failed to write wp-posts.json cache:', err?.message ?? err)
+    const writeCache = (targetPath) => {
+      try {
+        fs.writeFileSync(targetPath, JSON.stringify(posts, null, 2), 'utf-8')
+        console.log(`✓ Wrote WP post cache to ${targetPath.replace(toAbsolute(''), '')} (${posts.length} posts)`)
+      } catch (err) {
+        console.warn(`⚠️  Failed to write wp-posts.json cache to ${targetPath}:`, err?.message ?? err)
+      }
     }
+
+    // Persist cache in both dist (build output) and public (static asset root)
+    writeCache(toAbsolute('dist/wp-posts.json'))
+    writeCache(toAbsolute('public/wp-posts.json'))
 
     // Map posts to routes
     const blogRoutes = posts.map(post => {
