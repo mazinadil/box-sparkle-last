@@ -231,7 +231,45 @@ const convertEmbedsToIframes = (html: string): string => {
       return iframeTemplate(embedUrl);
     });
 
-  return convertBareLinks(convertParagraphLinks(convertBlockquotes(convertWpFigures(html))));
+  const convertLazyYoutubeDivs = (input: string) =>
+    input.replace(/<div[^>]*class="[^"]*rll-youtube-player[^"]*"[^>]*data-src="([^"]+)"[^>]*>([\s\S]*?)<\/div>/gi, (divMatch, dataSrc) => {
+      const embedUrl = buildYoutubeEmbedUrl(dataSrc) ?? dataSrc;
+      if (!embedUrl) return divMatch;
+      return iframeTemplate(embedUrl);
+    });
+
+  const fixLazyIframes = (input: string) =>
+    input.replace(/<iframe\b([^>]*)>/gi, (iframeMatch, attrs) => {
+      if (/src=/i.test(attrs)) {
+        return `<iframe${attrs}>`;
+      }
+
+      const dataSrcMatch = attrs.match(/\bdata-(?:lazy-)?src=["']([^"']+)["']/i);
+      const dataSrc = dataSrcMatch?.[1];
+      const embedUrl = dataSrc ? buildYoutubeEmbedUrl(dataSrc) ?? dataSrc : null;
+      if (!embedUrl) {
+        return `<iframe${attrs}>`;
+      }
+
+      return `<iframe src="${embedUrl}"${attrs.replace(dataSrcMatch?.[0] ?? "", "")}>`;
+    });
+
+  const unwrapNoscriptIframes = (input: string) =>
+    input.replace(/<noscript>\s*(<iframe[\s\S]*?<\/iframe>)\s*<\/noscript>/gi, (_full, iframe) => iframe);
+
+  return unwrapNoscriptIframes(
+    fixLazyIframes(
+      convertLazyYoutubeDivs(
+        convertBareLinks(
+          convertParagraphLinks(
+            convertBlockquotes(
+              convertWpFigures(html)
+            )
+          )
+        )
+      )
+    )
+  );
 };
 
 const resolveCategoryPresentation = (
