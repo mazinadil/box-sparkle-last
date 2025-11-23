@@ -152,19 +152,32 @@ const buildYoutubeEmbedUrl = (rawUrl: string): string | null => {
   const cleanedUrl = rawUrl?.replace(/&amp;/g, "&").trim();
   if (!cleanedUrl) return null;
 
+  const ensureAbsolute = (url: string) => (url.startsWith("//") ? `https:${url}` : url);
+
   try {
-    const url = new URL(cleanedUrl);
+    const url = new URL(ensureAbsolute(cleanedUrl), "https://youtube.com");
     const hostname = url.hostname.replace(/^www\./i, "");
+    const isYoutubeHost =
+      hostname === "youtube.com" ||
+      hostname.endsWith(".youtube.com") ||
+      hostname === "youtube-nocookie.com" ||
+      hostname.endsWith(".youtube-nocookie.com");
+
     let videoId: string | null = null;
 
     if (hostname === "youtu.be") {
       videoId = url.pathname.split("/").filter(Boolean)[0] ?? null;
-    } else if (hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
+    } else if (isYoutubeHost) {
       if (url.pathname === "/watch") {
         videoId = url.searchParams.get("v");
       } else if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/")) {
         videoId = url.pathname.split("/").filter(Boolean)[1] ?? null;
       }
+    }
+
+    // If we couldn't confidently extract an ID but it's already an embed URL, just return it normalized
+    if (!videoId && isYoutubeHost && url.pathname.startsWith("/embed/")) {
+      return ensureAbsolute(cleanedUrl);
     }
 
     if (!videoId) return null;
