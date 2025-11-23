@@ -217,7 +217,21 @@ const convertEmbedsToIframes = (html: string): string => {
       }
     );
 
-  return convertBlockquotes(convertWpFigures(html));
+  const convertParagraphLinks = (input: string) =>
+    input.replace(/<p>\s*<a[^>]+href="([^"]*youtu[^"]+)"[^>]*>[^<]*<\/a>\s*<\/p>/gi, (pMatch, href) => {
+      const embedUrl = buildYoutubeEmbedUrl(href);
+      if (!embedUrl) return pMatch;
+      return iframeTemplate(embedUrl);
+    });
+
+  const convertBareLinks = (input: string) =>
+    input.replace(/<p>\s*(https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\/[^\s<]+)\s*<\/p>/gi, (pMatch, href) => {
+      const embedUrl = buildYoutubeEmbedUrl(href);
+      if (!embedUrl) return pMatch;
+      return iframeTemplate(embedUrl);
+    });
+
+  return convertBareLinks(convertParagraphLinks(convertBlockquotes(convertWpFigures(html))));
 };
 
 const resolveCategoryPresentation = (
