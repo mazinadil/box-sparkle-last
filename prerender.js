@@ -106,6 +106,15 @@ const fetchBlogPosts = async () => {
       return []
     }
     
+    // Persist a static cache for the frontend (avoids client-side WP API calls / CORS issues)
+    try {
+      const cachePath = toAbsolute('dist/wp-posts.json')
+      fs.writeFileSync(cachePath, JSON.stringify(posts, null, 2), 'utf-8')
+      console.log(`✓ Wrote WP post cache to dist/wp-posts.json (${posts.length} posts)`)
+    } catch (err) {
+      console.warn('⚠️  Failed to write wp-posts.json cache:', err?.message ?? err)
+    }
+
     // Map posts to routes
     const blogRoutes = posts.map(post => {
       const category = post._embedded?.['wp:term']?.[0]?.[0]

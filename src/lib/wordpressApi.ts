@@ -22,6 +22,22 @@ const defaultHeaders: HeadersInit = {
   Accept: "application/json",
 };
 
+let staticPostsPromise: Promise<WpPost[] | null> | null = null;
+
+const loadStaticPosts = async (): Promise<WpPost[] | null> => {
+  if (typeof window === "undefined") return null;
+  if (staticPostsPromise) return staticPostsPromise;
+
+  staticPostsPromise = fetch("/wp-posts.json")
+    .then(async (res) => {
+      if (!res.ok) return null;
+      return (await res.json()) as WpPost[];
+    })
+    .catch(() => null);
+
+  return staticPostsPromise;
+};
+
 export interface WpRenderedField {
   rendered: string;
 }
@@ -188,6 +204,30 @@ const normalizeCategoriesParam = (value?: number | number[]) => {
 };
 
 export async function fetchPosts(params: FetchPostsParams = {}): Promise<PaginatedResult<WpPost>> {
+  const staticPosts = await loadStaticPosts();
+  if (staticPosts) {
+    const filtered = staticPosts.filter((post) => {
+      if (params.categories) {
+        const cats = Array.isArray(params.categories)
+          ? params.categories
+          : String(params.categories)
+              .split(",")
+              .map((v) => Number(v.trim()))
+              .filter((v) => !Number.isNaN(v));
+        if (cats.length > 0 && !post.categories.some((id) => cats.includes(id))) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    return {
+      items: filtered,
+      total: filtered.length,
+      totalPages: 1,
+    };
+  }
+
   const { data, response } = await requestWp<WpPost[]>("/wp/v2/posts", {
     _embed: true,
     page: params.page ?? 1,
@@ -207,6 +247,12 @@ export async function fetchPosts(params: FetchPostsParams = {}): Promise<Paginat
 }
 
 export async function fetchPostBySlug(slug: string): Promise<WpPost | null> {
+  const staticPosts = await loadStaticPosts();
+  if (staticPosts) {
+    const match = staticPosts.find((post) => post.slug === slug);
+    return match ?? null;
+  }
+
   const { data } = await requestWp<WpPost[]>("/wp/v2/posts", {
     slug,
     _embed: true,
