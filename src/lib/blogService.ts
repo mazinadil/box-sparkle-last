@@ -238,20 +238,29 @@ const convertEmbedsToIframes = (html: string): string => {
       return iframeTemplate(embedUrl);
     });
 
+  const findYoutubeUrl = (text: string) => {
+    const match = text.match(/https?:\/\/[^\s"'<>]*(?:youtube\.com|youtu\.be)[^\s"'<>]*/i);
+    return match ? buildYoutubeEmbedUrl(match[0]) ?? match[0] : null;
+  };
+
   const fixLazyIframes = (input: string) =>
     input.replace(/<iframe\b([^>]*)>/gi, (iframeMatch, attrs) => {
-      if (/src=/i.test(attrs)) {
-        return `<iframe${attrs}>`;
-      }
-
-      const dataSrcMatch = attrs.match(/\bdata-(?:lazy-)?src=["']([^"']+)["']/i);
+      const srcMatch = attrs.match(/\bsrc=["']([^"']*)["']/i);
+      const hasSrc = Boolean(srcMatch?.[1]);
+      const currentSrc = srcMatch?.[1];
+      const dataSrcMatch = attrs.match(/\bdata-[\w-]*src=["']([^"']+)["']/i);
       const dataSrc = dataSrcMatch?.[1];
-      const embedUrl = dataSrc ? buildYoutubeEmbedUrl(dataSrc) ?? dataSrc : null;
-      if (!embedUrl) {
-        return `<iframe${attrs}>`;
+      const embedUrl = findYoutubeUrl(attrs) || (dataSrc ? buildYoutubeEmbedUrl(dataSrc) ?? dataSrc : null);
+
+      if (!hasSrc && embedUrl) {
+        return `<iframe src="${embedUrl}"${attrs.replace(dataSrcMatch?.[0] ?? "", "").replace(/\s?src=["'][^"']*["']/, "")}>`;
       }
 
-      return `<iframe src="${embedUrl}"${attrs.replace(dataSrcMatch?.[0] ?? "", "")}>`;
+      if (hasSrc && currentSrc && embedUrl && (currentSrc.startsWith("data:") || currentSrc.startsWith("about:blank"))) {
+        return `<iframe src="${embedUrl}"${attrs.replace(dataSrcMatch?.[0] ?? "", "")}>`;
+      }
+
+      return `<iframe${attrs}>`;
     });
 
   const unwrapNoscriptIframes = (input: string) =>
