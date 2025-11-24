@@ -264,8 +264,17 @@ const extractYoutubeId = (rawUrl: string | null | undefined): string | null => {
 const convertEmbedsToIframes = (html: string): string => {
   if (!html) return html;
 
-  const iframeTemplate = (embedUrl: string) =>
-    `<div class="wp-block-embed__wrapper"><iframe src="${embedUrl}" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+  const getProvider = (embedUrl: string): "youtube" | "soundcloud" => {
+    return /soundcloud\.com/.test(embedUrl) ? "soundcloud" : "youtube";
+  };
+
+  const iframeTemplate = (embedUrl: string) => {
+    const provider = getProvider(embedUrl);
+    if (provider === "soundcloud") {
+      return `<div class="wp-block-embed__wrapper"><iframe width="100%" height="320" scrolling="no" frameborder="no" allow="autoplay" src="${embedUrl}" title="SoundCloud player" loading="lazy"></iframe></div>`;
+    }
+    return `<div class="wp-block-embed__wrapper"><iframe src="${embedUrl}" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+  };
 
   const decodeSettings = (value: string) =>
     value.replace(/&quot;/g, "\"").replace(/&#34;/g, "\"").replace(/&amp;/g, "&").replace(/\\\//g, "/");
