@@ -148,8 +148,14 @@ const normalizeLazyImages = (html: string) =>
     return updatedTag;
   });
 
+const decodeCommonEntities = (value: string) =>
+  value.replace(/&(amp|#0*38);/gi, "&");
+
+const normalizeRawUrl = (raw: string | null | undefined) =>
+  raw ? decodeCommonEntities(raw).replace(/\\\//g, "/") : raw ?? null;
+
 const buildYoutubeEmbedUrl = (rawUrl: string): string | null => {
-  const cleanedUrl = rawUrl?.replace(/&amp;/g, "&").trim();
+  const cleanedUrl = normalizeRawUrl(rawUrl)?.trim();
   if (!cleanedUrl) return null;
 
   const ensureAbsolute = (url: string) => (url.startsWith("//") ? `https:${url}` : url);
@@ -197,7 +203,7 @@ const buildYoutubeEmbedUrl = (rawUrl: string): string | null => {
 };
 
 const buildSoundcloudEmbedUrl = (rawUrl: string): string | null => {
-  const cleanedUrl = rawUrl?.replace(/&amp;/g, "&").trim();
+  const cleanedUrl = normalizeRawUrl(rawUrl)?.trim();
   if (!cleanedUrl) return null;
 
   const ensureAbsolute = (url: string) => (url.startsWith("//") ? `https:${url}` : url);
@@ -279,16 +285,18 @@ const convertEmbedsToIframes = (html: string): string => {
   const decodeSettings = (value: string) =>
     value.replace(/&quot;/g, "\"").replace(/&#34;/g, "\"").replace(/&amp;/g, "&").replace(/\\\//g, "/");
 
-  const resolveEmbedUrl = (raw: string | null | undefined) =>
-    (raw && (buildYoutubeEmbedUrl(raw) ?? buildSoundcloudEmbedUrl(raw))) || null;
+  const resolveEmbedUrl = (raw: string | null | undefined) => {
+    const normalized = normalizeRawUrl(raw);
+    return (normalized && (buildYoutubeEmbedUrl(normalized) ?? buildSoundcloudEmbedUrl(normalized))) || null;
+  };
 
   const findYoutubeUrl = (text: string) => {
-    const match = text.match(/https?:\/\/[^\s"'<>]*(?:youtube\.com|youtu\.be)[^\s"'<>]*/i);
+    const match = normalizeRawUrl(text)?.match(/https?:\/\/[^\s"'<>]*(?:youtube\.com|youtu\.be)[^\s"'<>]*/i);
     return match ? buildYoutubeEmbedUrl(match[0]) ?? match[0] : null;
   };
 
   const findSoundcloudUrl = (text: string) => {
-    const match = text.match(/https?:\/\/[^\s"'<>]*soundcloud\.com[^\s"'<>]*/i);
+    const match = normalizeRawUrl(text)?.match(/https?:\/\/[^\s"'<>]*soundcloud\.com[^\s"'<>]*/i);
     return match ? buildSoundcloudEmbedUrl(match[0]) ?? match[0] : null;
   };
 
