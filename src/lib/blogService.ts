@@ -196,6 +196,40 @@ const buildYoutubeEmbedUrl = (rawUrl: string): string | null => {
   }
 };
 
+const buildSoundcloudEmbedUrl = (rawUrl: string): string | null => {
+  const cleanedUrl = rawUrl?.replace(/&amp;/g, "&").trim();
+  if (!cleanedUrl) return null;
+
+  const ensureAbsolute = (url: string) => (url.startsWith("//") ? `https:${url}` : url);
+
+  try {
+    const url = new URL(ensureAbsolute(cleanedUrl), "https://soundcloud.com");
+    const hostname = url.hostname.replace(/^www\./i, "");
+    const isSoundcloud = hostname === "soundcloud.com" || hostname.endsWith(".soundcloud.com") || hostname === "w.soundcloud.com";
+
+    if (!isSoundcloud) return null;
+
+    // Already an embed URL
+    if (hostname === "w.soundcloud.com" && url.pathname.includes("/player")) {
+      return ensureAbsolute(cleanedUrl);
+    }
+
+    const base = "https://w.soundcloud.com/player/";
+    const params = new URLSearchParams();
+    params.set("url", url.toString());
+    params.set("auto_play", "false");
+    params.set("hide_related", "false");
+    params.set("show_comments", "true");
+    params.set("show_user", "true");
+    params.set("show_reposts", "false");
+    params.set("visual", "true");
+
+    return `${base}?${params.toString()}`;
+  } catch {
+    return null;
+  }
+};
+
 const extractYoutubeId = (rawUrl: string | null | undefined): string | null => {
   if (!rawUrl) return null;
   try {
@@ -236,10 +270,20 @@ const convertEmbedsToIframes = (html: string): string => {
   const decodeSettings = (value: string) =>
     value.replace(/&quot;/g, "\"").replace(/&#34;/g, "\"").replace(/&amp;/g, "&").replace(/\\\//g, "/");
 
+  const resolveEmbedUrl = (raw: string | null | undefined) =>
+    (raw && (buildYoutubeEmbedUrl(raw) ?? buildSoundcloudEmbedUrl(raw))) || null;
+
   const findYoutubeUrl = (text: string) => {
     const match = text.match(/https?:\/\/[^\s"'<>]*(?:youtube\.com|youtu\.be)[^\s"'<>]*/i);
     return match ? buildYoutubeEmbedUrl(match[0]) ?? match[0] : null;
   };
+
+  const findSoundcloudUrl = (text: string) => {
+    const match = text.match(/https?:\/\/[^\s"'<>]*soundcloud\.com[^\s"'<>]*/i);
+    return match ? buildSoundcloudEmbedUrl(match[0]) ?? match[0] : null;
+  };
+
+  const findEmbedUrl = (text: string) => findYoutubeUrl(text) ?? findSoundcloudUrl(text);
 
   const extractYoutubeFromSettings = (raw: string) => {
     const decoded = decodeSettings(raw);
@@ -266,7 +310,7 @@ const convertEmbedsToIframes = (html: string): string => {
 
       const wrapperMatch = figureMatch.match(/<div\b[^>]*wp-block-embed__wrapper[^>]*>([\s\S]*?)<\/div>/i);
       const rawUrl = wrapperMatch?.[1]?.replace(/<\/?p[^>]*>/gi, "").trim();
-      const embedUrl = rawUrl ? buildYoutubeEmbedUrl(rawUrl) : null;
+      const embedUrl = resolveEmbedUrl(rawUrl);
       if (!embedUrl || !wrapperMatch) {
         return figureMatch;
       }
@@ -278,7 +322,7 @@ const convertEmbedsToIframes = (html: string): string => {
     input.replace(
       /<blockquote\b[^>]*wp-embedded-content[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/blockquote>/gi,
       (blockquoteMatch, href) => {
-        const embedUrl = buildYoutubeEmbedUrl(href);
+        const embedUrl = resolveEmbedUrl(href);
         if (!embedUrl) {
           return blockquoteMatch;
         }
@@ -303,10 +347,10 @@ const convertEmbedsToIframes = (html: string): string => {
 
       const settingsMatch = context.match(/data-settings=(["'])([\s\S]*?youtube_url[\s\S]*?)\1/i);
       const urlFromSettings = settingsMatch ? extractYoutubeFromSettings(settingsMatch[2]) : null;
-      const urlFromNoscript = noscriptUrl ? buildYoutubeEmbedUrl(noscriptUrl) ?? noscriptUrl : null;
+      const urlFromNoscript = noscriptUrl ? resolveEmbedUrl(noscriptUrl) ?? noscriptUrl : null;
       const embedUrl = urlFromSettings
-        ? buildYoutubeEmbedUrl(urlFromSettings) ?? urlFromSettings
-        : urlFromNoscript ?? findYoutubeUrl(context + (noscriptBlock ?? ""));
+        ? resolveEmbedUrl(urlFromSettings) ?? urlFromSettings
+        : urlFromNoscript ?? findEmbedUrl(context + (noscriptBlock ?? ""));
 
       if (!embedUrl) {
         continue;
@@ -336,15 +380,15 @@ const convertEmbedsToIframes = (html: string): string => {
     });
 
   const convertParagraphLinks = (input: string) =>
-    input.replace(/<p>\s*<a[^>]+href="([^"]*youtu[^"]+)"[^>]*>[^<]*<\/a>\s*<\/p>/gi, (pMatch, href) => {
-      const embedUrl = buildYoutubeEmbedUrl(href);
+    input.replace(/<p>\s*<a[^>]+href="([^"]*(?:youtu[^"]+|soundcloud[^"]+))"[^>]*>[^<]*<\/a>\s*<\/p>/gi, (pMatch, href) => {
+      const embedUrl = resolveEmbedUrl(href);
       if (!embedUrl) return pMatch;
       return iframeTemplate(embedUrl);
     });
 
   const convertBareLinks = (input: string) =>
-    input.replace(/<p>\s*(https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\/[^\s<]+)\s*<\/p>/gi, (pMatch, href) => {
-      const embedUrl = buildYoutubeEmbedUrl(href);
+    input.replace(/<p>\s*(https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|soundcloud\.com)\/[^\s<]+)\s*<\/p>/gi, (pMatch, href) => {
+      const embedUrl = resolveEmbedUrl(href);
       if (!embedUrl) return pMatch;
       return iframeTemplate(embedUrl);
     });
@@ -363,7 +407,7 @@ const convertEmbedsToIframes = (html: string): string => {
       const currentSrc = srcMatch?.[1];
       const dataSrcMatch = attrs.match(/\bdata-[\w-]*src=["']([^"']+)["']/i);
       const dataSrc = dataSrcMatch?.[1];
-      const embedUrl = findYoutubeUrl(attrs) || (dataSrc ? buildYoutubeEmbedUrl(dataSrc) ?? dataSrc : null);
+      const embedUrl = findEmbedUrl(attrs) || (dataSrc ? resolveEmbedUrl(dataSrc) ?? dataSrc : null);
 
       if (!hasSrc && embedUrl) {
         return `<iframe src="${embedUrl}"${attrs.replace(dataSrcMatch?.[0] ?? "", "").replace(/\s?src=["'][^"']*["']/, "")}>`;
