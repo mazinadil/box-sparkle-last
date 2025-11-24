@@ -417,6 +417,18 @@ const convertEmbedsToIframes = (html: string): string => {
       return iframeTemplate(embedUrl);
     });
 
+  const convertSoundcloudIframes = (input: string) =>
+    input.replace(/<iframe\b([^>]*)>([\s\S]*?)<\/iframe>/gi, (fullMatch, attrs, inner) => {
+      const srcMatch = attrs.match(/\bsrc=["']([^"']+)["']/i);
+      const dataSrcMatch = attrs.match(/\bdata-[\w-]*src=["']([^"']+)["']/i);
+      const candidate = srcMatch?.[1] || dataSrcMatch?.[1];
+      const embedUrl = resolveEmbedUrl(candidate ?? "") || candidate;
+      if (!embedUrl || !/soundcloud\.com/i.test(embedUrl)) {
+        return fullMatch;
+      }
+      return iframeTemplate(embedUrl);
+    });
+
   const fixLazyIframes = (input: string) =>
     input.replace(/<iframe\b([^>]*)>/gi, (iframeMatch, attrs) => {
       const srcMatch = attrs.match(/\bsrc=["']([^"']*)["']/i);
@@ -498,11 +510,12 @@ const convertEmbedsToIframes = (html: string): string => {
     dedupeByVideoId(
       dedupeAdjacentIframes(
         fixLazyIframes(
-          convertLazyYoutubeDivs(
-            convertElementskitVideoLinks(
-              convertElementorPlaceholders(
-                convertBareLinks(
-                  convertParagraphLinks(
+          convertSoundcloudIframes(
+            convertLazyYoutubeDivs(
+              convertElementskitVideoLinks(
+                convertElementorPlaceholders(
+                  convertBareLinks(
+                    convertParagraphLinks(
                     convertBlockquotes(
                       convertWpFigures(html)
                     )
