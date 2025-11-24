@@ -348,15 +348,45 @@ const convertEmbedsToIframes = (html: string): string => {
   const unwrapNoscriptIframes = (input: string) =>
     input.replace(/<noscript>\s*(<iframe[\s\S]*?<\/iframe>)\s*<\/noscript>/gi, (_full, iframe) => iframe);
 
+  const dedupeAdjacentIframes = (input: string) => {
+    const regex =
+      /(<div[^>]*wp-block-embed__wrapper[^>]*>\s*)?<iframe\b[^>]*src=["']([^"']+)["'][^>]*>[\s\S]*?<\/iframe>(\s*<\/div>)?/gi;
+    const seen = new Map<string, number>();
+    let output = "";
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(input)) !== null) {
+      const [fullMatch, , src] = match;
+      const start = match.index;
+      const end = regex.lastIndex;
+      const previousIndex = seen.get(src);
+      const isDuplicate = previousIndex !== undefined && start - previousIndex < 2000;
+
+      if (isDuplicate) {
+        output += input.slice(lastIndex, start);
+        lastIndex = end;
+        continue;
+      }
+
+      seen.set(src, start);
+    }
+
+    output += input.slice(lastIndex);
+    return output;
+  };
+
   return unwrapNoscriptIframes(
-    fixLazyIframes(
-      convertLazyYoutubeDivs(
-        convertElementskitVideoLinks(
-          convertElementorPlaceholders(
-            convertBareLinks(
-              convertParagraphLinks(
-                convertBlockquotes(
-                  convertWpFigures(html)
+    dedupeAdjacentIframes(
+      fixLazyIframes(
+        convertLazyYoutubeDivs(
+          convertElementskitVideoLinks(
+            convertElementorPlaceholders(
+              convertBareLinks(
+                convertParagraphLinks(
+                  convertBlockquotes(
+                    convertWpFigures(html)
+                  )
                 )
               )
             )
