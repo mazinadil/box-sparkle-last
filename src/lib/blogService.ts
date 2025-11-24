@@ -265,19 +265,32 @@ const convertEmbedsToIframes = (html: string): string => {
       const startIndex = currentMatch.index;
       const contextStart = Math.max(0, startIndex - 4000);
       const context = output.slice(contextStart, startIndex);
+      const afterPlaceholder = output.slice(startIndex + currentMatch[0].length);
+      const noscriptAfterMatch = afterPlaceholder.match(/^\s*(<noscript>[\s\S]*?<\/noscript>)/i);
+      const noscriptBlock = noscriptAfterMatch?.[1];
+      const noscriptUrl = noscriptBlock?.match(/<iframe[^>]+src=["']([^"']+)["']/i)?.[1];
 
       const settingsMatch = context.match(/data-settings=(["'])([\s\S]*?youtube_url[\s\S]*?)\1/i);
       const urlFromSettings = settingsMatch ? extractYoutubeFromSettings(settingsMatch[2]) : null;
+      const urlFromNoscript = noscriptUrl ? buildYoutubeEmbedUrl(noscriptUrl) ?? noscriptUrl : null;
       const embedUrl = urlFromSettings
         ? buildYoutubeEmbedUrl(urlFromSettings) ?? urlFromSettings
-        : findYoutubeUrl(context);
+        : urlFromNoscript ?? findYoutubeUrl(context + (noscriptBlock ?? ""));
 
       if (!embedUrl) {
         continue;
       }
 
       const replacement = iframeTemplate(embedUrl);
-      output = output.slice(0, startIndex) + replacement + output.slice(startIndex + currentMatch[0].length);
+
+      const removeNoscript =
+        noscriptBlock &&
+        noscriptUrl &&
+        (embedUrl.includes(noscriptUrl) || embedUrl === buildYoutubeEmbedUrl(noscriptUrl));
+      const skipLength =
+        currentMatch[0].length + (removeNoscript ? noscriptAfterMatch?.[0].length ?? 0 : 0);
+
+      output = output.slice(0, startIndex) + replacement + output.slice(startIndex + skipLength);
       placeholderRegex.lastIndex = startIndex + replacement.length;
     }
 
