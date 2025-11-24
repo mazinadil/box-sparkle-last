@@ -516,8 +516,9 @@ const convertEmbedsToIframes = (html: string): string => {
                 convertElementorPlaceholders(
                   convertBareLinks(
                     convertParagraphLinks(
-                    convertBlockquotes(
-                      convertWpFigures(html)
+                      convertBlockquotes(
+                        convertWpFigures(html)
+                      )
                     )
                   )
                 )
