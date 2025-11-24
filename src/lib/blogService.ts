@@ -196,6 +196,37 @@ const buildYoutubeEmbedUrl = (rawUrl: string): string | null => {
   }
 };
 
+const extractYoutubeId = (rawUrl: string | null | undefined): string | null => {
+  if (!rawUrl) return null;
+  try {
+    const url = new URL(rawUrl, "https://youtube.com");
+    const host = url.hostname.replace(/^www\./i, "");
+    const isYoutube =
+      host === "youtube.com" ||
+      host.endsWith(".youtube.com") ||
+      host === "youtube-nocookie.com" ||
+      host.endsWith(".youtube-nocookie.com") ||
+      host === "youtu.be";
+
+    if (!isYoutube) return null;
+
+    if (host === "youtu.be") {
+      return url.pathname.split("/").filter(Boolean)[0] ?? null;
+    }
+
+    if (url.pathname === "/watch") {
+      return url.searchParams.get("v");
+    }
+
+    if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/")) {
+      return url.pathname.split("/").filter(Boolean)[1] ?? null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 const convertEmbedsToIframes = (html: string): string => {
   if (!html) return html;
 
@@ -376,16 +407,44 @@ const convertEmbedsToIframes = (html: string): string => {
     return output;
   };
 
+  const dedupeByVideoId = (input: string) => {
+    const regex = /<iframe\b[^>]*src=["']([^"']+)["'][^>]*>[\s\S]*?<\/iframe>/gi;
+    const seen = new Set<string>();
+    let output = "";
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(input)) !== null) {
+      const src = match[1];
+      const key = extractYoutubeId(src) ?? src;
+      const start = match.index;
+      const end = regex.lastIndex;
+
+      if (seen.has(key)) {
+        output += input.slice(lastIndex, start);
+        lastIndex = end;
+        continue;
+      }
+
+      seen.add(key);
+    }
+
+    output += input.slice(lastIndex);
+    return output;
+  };
+
   return unwrapNoscriptIframes(
-    dedupeAdjacentIframes(
-      fixLazyIframes(
-        convertLazyYoutubeDivs(
-          convertElementskitVideoLinks(
-            convertElementorPlaceholders(
-              convertBareLinks(
-                convertParagraphLinks(
-                  convertBlockquotes(
-                    convertWpFigures(html)
+    dedupeByVideoId(
+      dedupeAdjacentIframes(
+        fixLazyIframes(
+          convertLazyYoutubeDivs(
+            convertElementskitVideoLinks(
+              convertElementorPlaceholders(
+                convertBareLinks(
+                  convertParagraphLinks(
+                    convertBlockquotes(
+                      convertWpFigures(html)
+                    )
                   )
                 )
               )
