@@ -202,6 +202,31 @@ const convertEmbedsToIframes = (html: string): string => {
   const iframeTemplate = (embedUrl: string) =>
     `<div class="wp-block-embed__wrapper"><iframe src="${embedUrl}" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
 
+  const decodeSettings = (value: string) =>
+    value.replace(/&quot;/g, "\"").replace(/&#34;/g, "\"").replace(/&amp;/g, "&").replace(/\\\//g, "/");
+
+  const findYoutubeUrl = (text: string) => {
+    const match = text.match(/https?:\/\/[^\s"'<>]*(?:youtube\.com|youtu\.be)[^\s"'<>]*/i);
+    return match ? buildYoutubeEmbedUrl(match[0]) ?? match[0] : null;
+  };
+
+  const extractYoutubeFromSettings = (raw: string) => {
+    const decoded = decodeSettings(raw);
+    try {
+      const parsed = JSON.parse(decoded);
+      const candidate =
+        (parsed as Record<string, unknown>).youtube_url ??
+        (parsed as Record<string, unknown>).youtubeURL ??
+        (parsed as Record<string, unknown>).url;
+      if (typeof candidate === "string") {
+        return candidate;
+      }
+    } catch {
+      // Fall back to regex scanning
+    }
+    return findYoutubeUrl(decoded);
+  };
+
   const convertWpFigures = (input: string) =>
     input.replace(/<figure\b[^>]*wp-block-embed[^>]*>[\s\S]*?<\/figure>/gi, (figureMatch) => {
       if (/<iframe\b/i.test(figureMatch)) {
@@ -230,6 +255,42 @@ const convertEmbedsToIframes = (html: string): string => {
       }
     );
 
+  const convertElementorPlaceholders = (input: string) => {
+    const placeholderRegex = /<div\b[^>]*class="[^"]*elementor-video[^"]*"[^>]*>\s*<\/div>/gi;
+    let output = input;
+    let match: RegExpExecArray | null;
+
+    while ((match = placeholderRegex.exec(output)) !== null) {
+      const currentMatch = match;
+      const startIndex = currentMatch.index;
+      const contextStart = Math.max(0, startIndex - 4000);
+      const context = output.slice(contextStart, startIndex);
+
+      const settingsMatch = context.match(/data-settings=(["'])([\s\S]*?youtube_url[\s\S]*?)\1/i);
+      const urlFromSettings = settingsMatch ? extractYoutubeFromSettings(settingsMatch[2]) : null;
+      const embedUrl = urlFromSettings
+        ? buildYoutubeEmbedUrl(urlFromSettings) ?? urlFromSettings
+        : findYoutubeUrl(context);
+
+      if (!embedUrl) {
+        continue;
+      }
+
+      const replacement = iframeTemplate(embedUrl);
+      output = output.slice(0, startIndex) + replacement + output.slice(startIndex + currentMatch[0].length);
+      placeholderRegex.lastIndex = startIndex + replacement.length;
+    }
+
+    return output;
+  };
+
+  const convertElementskitVideoLinks = (input: string) =>
+    input.replace(/<a[^>]*class="[^"]*(?:ekit-video-popup|ekit-video-popup-btn)[^"]*"[^>]*href="([^"]+)"[^>]*>[\s\S]*?<\/a>/gi, (anchorMatch, href) => {
+      const embedUrl = buildYoutubeEmbedUrl(decodeSettings(href)) ?? findYoutubeUrl(anchorMatch);
+      if (!embedUrl) return anchorMatch;
+      return iframeTemplate(embedUrl);
+    });
+
   const convertParagraphLinks = (input: string) =>
     input.replace(/<p>\s*<a[^>]+href="([^"]*youtu[^"]+)"[^>]*>[^<]*<\/a>\s*<\/p>/gi, (pMatch, href) => {
       const embedUrl = buildYoutubeEmbedUrl(href);
@@ -250,11 +311,6 @@ const convertEmbedsToIframes = (html: string): string => {
       if (!embedUrl) return divMatch;
       return iframeTemplate(embedUrl);
     });
-
-  const findYoutubeUrl = (text: string) => {
-    const match = text.match(/https?:\/\/[^\s"'<>]*(?:youtube\.com|youtu\.be)[^\s"'<>]*/i);
-    return match ? buildYoutubeEmbedUrl(match[0]) ?? match[0] : null;
-  };
 
   const fixLazyIframes = (input: string) =>
     input.replace(/<iframe\b([^>]*)>/gi, (iframeMatch, attrs) => {
@@ -282,10 +338,14 @@ const convertEmbedsToIframes = (html: string): string => {
   return unwrapNoscriptIframes(
     fixLazyIframes(
       convertLazyYoutubeDivs(
-        convertBareLinks(
-          convertParagraphLinks(
-            convertBlockquotes(
-              convertWpFigures(html)
+        convertElementskitVideoLinks(
+          convertElementorPlaceholders(
+            convertBareLinks(
+              convertParagraphLinks(
+                convertBlockquotes(
+                  convertWpFigures(html)
+                )
+              )
             )
           )
         )
